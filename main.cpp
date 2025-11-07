@@ -9,7 +9,6 @@
 
 struct DataItem {
     int id;
-    int result = 0;
 
     bool operator==(const DataItem& other) const {
         return id == other.id;
@@ -18,10 +17,9 @@ struct DataItem {
 
 const DataItem SENTINEL = {-1};
 const int NUM_ITEMS = 1000000;
+const int NUM_PRODUCERS = 4;
 
-SafeQueue<DataItem> pipeline_queue_one;
-SafeQueue<DataItem> pipeline_queue_two;
-SafeQueue<DataItem> pipeline_queue_three;
+SafeQueue<DataItem> pipeline_queue;
 
 // --- Performance Utilities ---
 
@@ -41,64 +39,34 @@ private:
 
 // --- Pipeline Stages ---
 
-void loader_stage() {
-    printf("loader started\n");
+/**
+ * @brief Produces DataItems and pushes them into the queue.
+ * Signals completion using the SENTINEL.
+ */
+void producer_stage(int thread_id) {
+    printf("Producer %d started\n", thread_id);
 
-    for (int i = 0; i < NUM_ITEMS; i++) {
-        pipeline_queue_one.push({i});
+    for (int i = thread_id; i < NUM_ITEMS; i += NUM_PRODUCERS) {
+        pipeline_queue.push({i});
     }
-    pipeline_queue_one.push(SENTINEL);
 
-    printf("loader finished and sent sentinel.\n");
+    if (thread_id == NUM_PRODUCERS - 1) {
+        pipeline_queue.push(SENTINEL);
+    }
+
+    printf("Producer %d finished and sent sentinel.\n", thread_id);
 }
 
-void parser_stage() {
-    printf("parser started\n");
-    DataItem item;
-
-    while (true) {
-        pipeline_queue_one.wait_and_pop(item);
-
-        if (item == SENTINEL) {
-            break;
-        }
-
-        item.result = static_cast<int>(std::sqrt(item.id));
-
-        pipeline_queue_two.push(item);
-    }
-    pipeline_queue_two.push(SENTINEL);
-
-    printf("parser finished and sent sentinel.\n");
-}
-
-void transformer_stage() {
-    printf("transformer started.\n");
-    DataItem item;
-
-    while (true) {
-        pipeline_queue_two.wait_and_pop(item);
-
-        if (item == SENTINEL) {
-            break;
-        }
-
-        item.result *= 7;
-
-        pipeline_queue_three.push(item);
-    }
-    pipeline_queue_three.push(SENTINEL);
-
-    printf("transformer finished and sent sentinel\n");
-}
-
-void output_stage() {
-    printf("output started.\n");
+/**
+ * @brief Consumes DataItems from the queue, processing them until the SENTINEL is received.
+ */
+void consumer_stage() {
+    printf("Consumer started.\n");
     DataItem item;
     size_t processed_count = 0;
 
     while (true) {
-        pipeline_queue_three.wait_and_pop(item);
+        pipeline_queue.wait_and_pop(item);
 
         if (item == SENTINEL) {
             break;
@@ -107,7 +75,7 @@ void output_stage() {
         processed_count++;
     }
     
-    printf("output finished. Processed %zu items.\n", processed_count);
+    printf("Consumer finished. Processed %zu items.\n", processed_count);
 }
 
 // --- Main Driver ---
@@ -118,15 +86,17 @@ int main() {
     { 
         ScopedTimer overall_timer("Total Pipeline Execution");
 
-        std::thread loader(loader_stage);
-        std::thread parser(parser_stage);
-        std::thread transformer(transformer_stage);
-        std::thread output(output_stage);
+        std::thread producers[NUM_PRODUCERS];
 
-        loader.join();
-        parser.join();
-        transformer.join();
-        output.join();
+        for (int i = 0; i < NUM_PRODUCERS; i++) {
+            producers[i] = std::thread(producer_stage, i);
+        }
+        std::thread consumer(consumer_stage);
+
+        for (int i = 0; i < NUM_PRODUCERS; i++) {
+            producers[i].join();
+        }
+        consumer.join();
     }
 
     printf("Pipeline finished successfully.\n");
