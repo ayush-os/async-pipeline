@@ -16,6 +16,8 @@ struct DataItem {
 };
 
 const DataItem SENTINEL = {-1};
+const int NUM_ITEMS = 1000000;
+const int NUM_PRODUCERS = 4;
 
 SafeQueue<DataItem> pipeline_queue;
 
@@ -41,16 +43,18 @@ private:
  * @brief Produces DataItems and pushes them into the queue.
  * Signals completion using the SENTINEL.
  */
-void producer_stage(int num_items) {
-    printf("Producer started. Total items: %d\n", num_items);
-    
-    for (int i = 0; i < num_items; i++) {
+void producer_stage(int thread_id) {
+    printf("Producer %d started\n", thread_id);
+
+    for (int i = thread_id; i < NUM_ITEMS; i += NUM_PRODUCERS) {
         pipeline_queue.push({i});
     }
 
-    pipeline_queue.push(SENTINEL);
-    
-    printf("Producer finished and sent sentinel.\n");
+    if (thread_id == NUM_PRODUCERS - 1) {
+        pipeline_queue.push(SENTINEL);
+    }
+
+    printf("Producer %d finished and sent sentinel.\n", thread_id);
 }
 
 /**
@@ -77,20 +81,24 @@ void consumer_stage() {
 // --- Main Driver ---
 
 int main() {
-    const int NUM_ITEMS = 1000000; 
-
     printf("--- Asynchronous Pipeline Benchmark (2-Stage SafeQueue) ---\n");
-    
+
     { 
         ScopedTimer overall_timer("Total Pipeline Execution");
 
-        std::thread producer(producer_stage, NUM_ITEMS);
+        std::thread producers[NUM_PRODUCERS];
+
+        for (int i = 0; i < NUM_PRODUCERS; i++) {
+            producers[i] = std::thread(producer_stage, i);
+        }
         std::thread consumer(consumer_stage);
 
-        producer.join();
+        for (int i = 0; i < NUM_PRODUCERS; i++) {
+            producers[i].join();
+        }
         consumer.join();
     }
-    
+
     printf("Pipeline finished successfully.\n");
 
     return 0;
