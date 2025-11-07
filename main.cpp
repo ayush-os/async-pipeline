@@ -28,7 +28,7 @@ public:
     ~ScopedTimer() {
         auto end_time = std::chrono::high_resolution_clock::now();
         auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time_);
-        std::cout << name_ << " time: " << duration.count() << " ms" << std::endl;
+        printf("%s time: %lld ms\n", name_.c_str(), (long long)duration.count());
     }
 private:
     std::string name_;
@@ -42,18 +42,36 @@ private:
  * Signals completion using the SENTINEL.
  */
 void producer_stage(int num_items) {
-    std::cout << "Producer started. Total items: " << num_items << std::endl;
-    // TODO
-    std::cout << "Producer finished and sent sentinel." << std::endl;
+    printf("Producer started. Total items: %d\n", num_items);
+    
+    for (int i = 0; i < num_items; i++) {
+        pipeline_queue.push({i});
+    }
+
+    pipeline_queue.push(SENTINEL);
+    
+    printf("Producer finished and sent sentinel.\n");
 }
 
 /**
  * @brief Consumes DataItems from the queue, processing them until the SENTINEL is received.
  */
 void consumer_stage() {
-    std::cout << "Consumer started." << std::endl;
-    // TODO
-    std::cout << "Consumer finished." << std::endl;
+    printf("Consumer started.\n");
+    DataItem item;
+    size_t processed_count = 0;
+
+    while (true) {
+        pipeline_queue.wait_and_pop(item);
+
+        if (item == SENTINEL) {
+            break;
+        }
+
+        processed_count++;
+    }
+    
+    printf("Consumer finished. Processed %zu items.\n", processed_count);
 }
 
 // --- Main Driver ---
@@ -61,15 +79,19 @@ void consumer_stage() {
 int main() {
     const int NUM_ITEMS = 1000000; 
 
-    std::cout << "--- Asynchronous Pipeline Benchmark (2-Stage SafeQueue) ---" << std::endl;
+    printf("--- Asynchronous Pipeline Benchmark (2-Stage SafeQueue) ---\n");
     
     { 
         ScopedTimer overall_timer("Total Pipeline Execution");
 
-        // TODO
+        std::thread producer(producer_stage, NUM_ITEMS);
+        std::thread consumer(consumer_stage);
+
+        producer.join();
+        consumer.join();
     }
     
-    std::cout << "Pipeline finished successfully." << std::endl;
+    printf("Pipeline finished successfully.\n");
 
     return 0;
 }
