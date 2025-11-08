@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "safe_queue.h"
+#include "spsc_queue.h"
 
 // --- Data Structures ---
 
@@ -19,7 +20,7 @@ struct DataItem
 
 const DataItem SENTINEL = {-1};
 
-SafeQueue<DataItem> pipeline_queue;
+SPSCLockFreeQueue<DataItem> pipeline_queue;
 
 // --- Performance Utilities ---
 
@@ -50,12 +51,22 @@ void producer_stage(int num_items)
 {
     printf("Producer started. Total items: %d\n", num_items);
 
-    for (int i = 0; i < num_items; i++)
+    for (int i = 0; i < num_items;)
     {
-        pipeline_queue.push({i});
+        if (pipeline_queue.push({i}))
+        {
+            i++;
+        }
+        else
+        {
+            // backoff here dramatically improves perf
+            std::this_thread::yield();
+        }
     }
 
-    pipeline_queue.push(SENTINEL);
+    while (!pipeline_queue.push(SENTINEL))
+    {
+    }
 
     printf("Producer finished and sent sentinel.\n");
 }
@@ -71,14 +82,17 @@ void consumer_stage()
 
     while (true)
     {
-        pipeline_queue.wait_and_pop(item);
-
-        if (item == SENTINEL)
+        if (pipeline_queue.pop(item))
         {
-            break;
+            if (item == SENTINEL)
+                break;
+            processed_count++;
         }
-
-        processed_count++;
+        else
+        {
+            // backoff here dramatically improves perf
+            std::this_thread::yield();
+        }
     }
 
     printf("Consumer finished. Processed %zu items.\n", processed_count);
@@ -90,7 +104,7 @@ int main()
 {
     const int NUM_ITEMS = 1000000;
 
-    printf("--- Asynchronous Pipeline Benchmark (2-Stage SafeQueue) ---\n");
+    printf("--- Asynchronous Pipeline Benchmark (2-Stage SPSCQueue) ---\n");
 
     {
         ScopedTimer overall_timer("Total Pipeline Execution");

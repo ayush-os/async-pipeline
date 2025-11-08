@@ -6,7 +6,12 @@ set(CMAKE_CXX_STANDARD_REQUIRED True)
 
 option(ENABLE_TSAN "Enable Thread Sanitizer for race condition detection" OFF)
 
-add_executable(pipeline main.cpp include/safe_queue.h)
+add_executable(
+    pipeline
+    main.cpp
+    include/safe_queue.h
+    include/spsc_queue.h
+)
 
 target_include_directories(pipeline PUBLIC "${PROJECT_SOURCE_DIR}/include")
 
